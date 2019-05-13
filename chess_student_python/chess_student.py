@@ -1,12 +1,17 @@
 import numpy as np
 import numpy.matlib
+from tqdm import tqdm
 import matplotlib.pyplot as plt
+plt.style.use('ggplot')
+
+
 from degree_freedom_queen import *
 from degree_freedom_king1 import *
 from degree_freedom_king2 import *
 from features import *
 from generate_game import *
 from Q_values import *
+from backProp import *
 
 from mvAvg import *
 
@@ -112,20 +117,27 @@ def main():
     bias_W2 = np.zeros((n_output_layer,))
 
 # tracking
-    reward_history = np.array([0])
-    error_hist = np.array([0])
-    k1_hist = np.array([0])
-    q_hist = np.array([0])
+    reward_history = np.array([])
+    error_hist = np.array([])
+    k1_hist = np.array([])
+    q_hist = np.array([])
+    move_hist = np.array([])
+    delta_w_hist = np.array([])
+    delta_b_hist = np.array([])
+    weight_hist_w1 = np.array([])
+    weight_hist_w2 = np.array([])
 
     # YOUR CODES ENDS HERE
 
     # Network Parameters
     epsilon_0 = 0.2   #epsilon for the e-greedy policy
     beta = 0.00005    #epsilon discount factor
+    #     beta = 0.00005    #epsilon discount factor
     gamma = 0.85      #SARSA Learning discount factor
-    eta = -0.0035      #learning rate #should maybe be negative?
-    N_episodes = 1000#Number of games, each game ends when we have a checkmate or a draw
-# 100000
+    #     gamma = 0.85      #SARSA Learning discount factor
+    eta = 0.0035      #learning rate #should maybe be negative?
+    N_episodes = 20000#Number of games, each game ends when we have a checkmate or a draw
+# 10000
     ###  Training Loop  ###
 
     # Directions: down, up, right, left, down-right, down-left, up-right, up-left
@@ -150,9 +162,9 @@ def main():
     # END OF SUGGESTIONS
 
 
-    for n in range(N_episodes):
-        if n%100 == 0: #print episode count every 100 episodes
-            print("Episode: {}/{}".format(n,N_episodes))
+    for n in tqdm(range(N_episodes),desc = "Training Agent",smoothing = 0.2):
+        # if n%100 == 0: #print episode count every 100 episodes
+        #     print("Episode: {}/{}".format(n,N_episodes))
 
         k1_moves = 0
         q_moves = 0
@@ -161,6 +173,9 @@ def main():
         # print(reward_history)
         game_reward = 0
         game_cost = 0
+        avg_weight_w1 = 0
+        avg_weight_w2 = 0
+
 
         epsilon_f = epsilon_0 / (1 + beta * n) #epsilon is discounting per iteration to have less probability to explore
         checkmate = 0  # 0 = not a checkmate, 1 = checkmate
@@ -212,19 +227,10 @@ def main():
 
             # a_agent =  1# CHANGE THIS VALUE BASED ON YOUR CODE TO USE EPSILON GREEDY POLICY
             prob = np.random.rand()
-
-            # print(a.size)
-            # print(*a)
-            #
-            # print(allowed_a.size)
-            # print(allowed_a)
-            #
-            # print(Q.size)
-            # print(Q)
+            # prob = 1 #for q learning
 
             Q_a = Q[allowed_a] #the q values of allowed actions
-            # print(Q_a.size)
-            # print(Q_a)
+            choice = 0
 
             if prob>epsilon_f:
                 a_agent = allowed_a[np.argmax(Q_a)]
@@ -233,7 +239,7 @@ def main():
                 ranChoice = np.random.randint(0,allowed_a.size)
                 a_agent = allowed_a[ranChoice]
 
-
+            # print("Agent prob {},epsilon_f at {}, chose {},greedy = {} ".format(prob,epsilon_f,a_agent,prob>epsilon_f))
 
             #THE CODE ENDS HERE.
 
@@ -286,40 +292,16 @@ def main():
                 the action made. You computed previously Q values in the Q_values function. Be careful: this is the last
                 iteration of the episode, the agent gave checkmate.
                 """
-                cost = 0.5 * (R + gamma *  Q_next - Q) ** 2
+                try:
+                    W1,W2,bias_W1,bias_W2,cost = backProp(eta,gamma,R,Q_next,Q,a_agent,x,out1,W1,W2,bias_W1,bias_W2)
+
+                except:
+                    print("Episode: {}/{}".format(n,N_episodes))
+
+                game_reward = R
                 game_cost += cost
-                # print(cost.shape)
-                # print(a_agent)
-                act1 = np.dot(W1, x) + bias_W1
-                act2 = np.dot(W2, out1) + bias_W2
-
-
-                # for the output layer
-                # dirac = (cost - Q) * np.heaviside(Q, 1)
-                dirac = (cost) * np.heaviside(act2, 1)
-                #
-                # print(cost[a_agent])
-                # print(dirac.shape)
-                # print(W2.shape)
-                # print(out1.shape)
-
-                delta_wo = eta * dirac[a_agent] * out1
-                delta_bo = eta * dirac[a_agent]
-
-
-                # for the hidden layer
-                dirac_k1 = np.dot(dirac , W2) * np.heaviside(act1, 1)
-                delta_wh = eta * np.outer(dirac_k1 , x)
-                delta_bh = eta * dirac_k1
-
-                # update parameters
-                W1 += delta_wh
-                W2[a_agent] += delta_wo
-
-                bias_W1 += delta_bh
-                bias_W2[a_agent] += delta_bo
-                game_reward += R
-                # reward_history = np.append(reward_history,[R])
+                avg_weight_w1 = np.mean(np.abs(W1))
+                avg_weight_w2 = np.mean(np.abs(W2))
 
                 # THE CODE ENDS HERE
 
@@ -340,43 +322,21 @@ def main():
                 """
 # just copied code over from checkmnate section for now, this may well be incorrect
 
-                cost = 0.5 * (R + gamma *  Q_next - Q) ** 2
-                game_cost += cost
-                # print(cost.shape)
-                # print(a_agent)
-                act1 = np.dot(W1, x) + bias_W1
-                act2 = np.dot(W2, out1) + bias_W2
 
+                # try:
+                W1,W2,bias_W1,bias_W2,cost = backProp (eta,gamma,R,Q_next,Q,a_agent,x,out1,W1,W2,bias_W1,bias_W2)
 
-                # for the output layer
-                # dirac = (cost - Q) * np.heaviside(Q, 1)
-                dirac = (cost) * np.heaviside(act2, 1)
-                #
-                # print(cost[a_agent])
-                # print(dirac.shape)
-                # print(W2.shape)
-                # print(out1.shape)
+                # except:
+                # print("Episode: {}/{}".format(n,N_episodes))
 
-                delta_wo = eta * dirac[a_agent] * out1
-                delta_bo = eta * dirac[a_agent]
-
-
-                # for the hidden layer
-                dirac_k1 = np.dot(dirac , W2) * np.heaviside(act1, 1)
-                delta_wh = eta * np.outer(dirac_k1 , x)
-                delta_bh = eta * dirac_k1
-
-                # update parameters
-                W1 += delta_wh
-                W2[a_agent] += delta_wo
-
-                bias_W1 += delta_bh
-                bias_W2[a_agent] += delta_bo
-                game_reward += R
-                # reward_history = np.append(reward_history,[R])
 
 
                 # YOUR CODE ENDS HERE
+                game_reward = R
+                game_cost += cost
+                avg_weight_w1 = np.mean(np.abs(W1))
+                avg_weight_w2 = np.mean(np.abs(W2))
+
 
                 if draw:
                     break
@@ -422,73 +382,112 @@ def main():
 # some questionable matrix operations going on here
 
             R = 0
-            try:
-                cost = 0.5 * (R + gamma *  Q_next - Q) ** 2
-            except:
-                print(R)
-                print(gamma)
-                print(Q_next)
-                print(Q)
 
+            W1,W2,bias_W1,bias_W2,cost = backProp (eta,gamma,R,Q_next,Q,a_agent,x,out1,W1,W2,bias_W1,bias_W2)
+
+            game_reward = R
             game_cost += cost
-            # print(cost.shape)
-            # print(a_agent)
-            act1 = np.dot(W1, x) + bias_W1
-            act2 = np.dot(W2, out1) + bias_W2
+            avg_weight_w1 = np.mean(np.abs(W1))
+            avg_weight_w2 = np.mean(np.abs(W2))
 
-
-            # for the output layer
-            # dirac = (cost - Q) * np.heaviside(Q, 1)
-            dirac = (cost) * np.heaviside(act2, 1)
-            #
-            # print(cost[a_agent])
-            # print(dirac.shape)
-            # print(W2.shape)
-            # print(out1.shape)
-
-            try:
-                delta_wo = eta * dirac[a_agent] * out1
-            except:
-                print(dirac[a_agent])
-                print(out1)
-            delta_bo = eta * dirac[a_agent]
-
-
-            # for the hidden layer
-            dirac_k1 = np.dot(dirac , W2) * np.heaviside(act1, 1)
-            delta_wh = eta * np.outer(dirac_k1 , x)
-            delta_bh = eta * dirac_k1
-
-            # update parameters
-            W1 += delta_wh
-            W2[a_agent] += delta_wo
-
-            bias_W1 += delta_bh
-            bias_W2[a_agent] += delta_bo
-            game_reward += R
             # reward_history = np.append(reward_history,[R])
             # YOUR CODE ENDS HERE
             i += 1
-        # print(x.shape)
-        # print(dirac_k1.shape)
-        # print(delta_wh.shape)
-        game_cost = np.mean(game_cost)
+
+        game_cost = np.sqrt(np.mean(game_cost**2))
         reward_history = np.append(reward_history,game_reward)
+
         error_hist = np.append(error_hist,game_cost)
         k1_hist = np.append(k1_hist,q_moves)
         q_hist = np.append(q_hist,k1_moves)
+        move_hist = np.append(move_hist,k1_moves+q_moves)
+
+        weight_hist_w1 = np.append(weight_hist_w1,avg_weight_w1)
+        weight_hist_w2 = np.append(weight_hist_w2,avg_weight_w2)
+
+    # print("Weight values for w1 are {}".format(W1))
+    # print("Weight values for w2 are {}".format(W2))
 
 
 
 
-    f, axarr = plt.subplots(4, sharex=True)
-    f.suptitle('debug plots, reward-king moves-queen moves-cost')
-    axarr[0].plot(moving_average(reward_history, n = 100))
-    axarr[1].plot(moving_average(k1_hist, n = 100))
-    axarr[2].plot(moving_average(q_hist, n = 100))
-    axarr[3].plot(moving_average(error_hist, n = 100))
+
+
+    # f, axarr = plt.subplots(1, sharex=True)
+    # f.suptitle('debug plots, reward-king moves-queen moves-cost')
+    # axarr[0].plot(moving_average(reward_history, n = 100))
+    # axarr[1].plot(moving_average(k1_hist, n = 100))
+    # axarr[2].plot(moving_average(q_hist, n = 100))
+    # axarr[3].plot(moving_average(error_hist, n = 100))
+    # axarr[4].plot(moving_average(delta_w_hist, n = 100))
+
+    # better plots
+    # f, axarr = plt.subplots(2, sharex=True)
+    # plt.title('Plot of Reward and Number of Moves')
+    # plt.plot(moving_average(reward_history, n = 100))
+    # plt.plot(moving_average(move_hist, n = 100))
+
+
+    fig, ax1 = plt.subplots()
+
+    color=list(plt.rcParams['axes.prop_cycle'])[1]['color']
+    ax1.set_xlabel('Game')
+    ax1.set_ylabel('Reward', color=color)
+    ax1.plot(exp_moving_average(reward_history, 1/1000),color=color,label='Reward')
+    ax1.tick_params(axis='y', labelcolor=color)
+
+    ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
+
+    color=list(plt.rcParams['axes.prop_cycle'])[0]['color']
+    ax2.set_ylabel('Moves',color=color)  # we already handled the x-label with ax1
+    ax2.plot(exp_moving_average(move_hist, 1/1000),color=color,label='Moves')
+    ax2.tick_params(axis='y', labelcolor=color)
+
+    lines, labels = ax1.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax2.legend(lines + lines2, labels + labels2, loc=0)
+
+
+    fig.tight_layout()  # otherwise the right y-label is slightly clipped
+
+    fig, ax3 = plt.subplots()
+
+    color=list(plt.rcParams['axes.prop_cycle'])[1]['color']
+    ax3.set_xlabel('Game')
+    ax3.set_ylabel('weight_hist_w1', color=color)
+    ax3.plot(exp_moving_average(weight_hist_w1, 1/1000),color=color,label='W1 Weights')
+    ax3.tick_params(axis='y', labelcolor=color)
+
+    ax4 = ax3.twinx()  # instantiate a second axes that shares the same x-axis
+    color=list(plt.rcParams['axes.prop_cycle'])[0]['color']
+    ax4.set_ylabel('weight_hist_w2',color=color)  # we already handled the x-label with ax1
+    ax4.plot(exp_moving_average(weight_hist_w2, 1/1000),color=color,label='W2 Weights')
+    ax4.tick_params(axis='y', labelcolor=color)
+
+    erh = exp_moving_average(reward_history, 1/1000)
+    emh = exp_moving_average(move_hist, 1/1000)
+    ema = exp_moving_average(weight_hist_w1, 1/1000)
+    ewa = exp_moving_average(weight_hist_w2, 1/1000)
+
+    lines, labels = ax3.get_legend_handles_labels()
+    lines2, labels2 = ax4.get_legend_handles_labels()
+    ax4.legend(lines + lines2, labels + labels2, loc=0)
+
+    np.savetxt('test2.csv', (erh, emh, ema, ewa),delimiter=',')
+
+    # outfile = "params_3"
+    # np.save(outfile,erh )
+
+    outfile = "Rq_1"
+    np.save(outfile,erh )
+
+    outfile = "Rm_1"
+    np.save(outfile,emh )
 
     plt.show()
+
+
+
     # reward is being calculated incorrecrtly i think, should probably only append reward at end of game and total reward appended maybe??
 
 
